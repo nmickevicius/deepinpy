@@ -11,6 +11,7 @@ from deepinpy.utils import utils
 from deepinpy import opt
 import deepinpy.utils.complex as cp
 from deepinpy.forwards import MultiChannelMRIDataset
+from deepinpy.forwards import MultiBandMRIDataset
 
 from torchvision.utils import make_grid
 
@@ -53,7 +54,12 @@ class Recon(pl.LightningModule):
 
 
     def _build_data(self):
-        self.D = MultiChannelMRIDataset(data_file=self.hparams.data_file, stdev=self.hparams.stdev, num_data_sets=self.hparams.num_data_sets, adjoint=False, id=0, clear_cache=False, cache_data=False, scale_data=False, fully_sampled=self.hparams.fully_sampled, data_idx=None, inverse_crime=self.hparams.inverse_crime, noncart=self.hparams.noncart)
+
+        # NJM: support for multiband
+        if self.hparams.multiband:
+            self.D = MultiBandMRIDataset(data_file=self.hparams.data_file, stdev=self.hparams.stdev, num_data_sets=self.hparams.num_data_sets, adjoint=False, id=0, clear_cache=False, cache_data=False, scale_data=False, fully_sampled=self.hparams.fully_sampled, data_idx=None, inverse_crime=self.hparams.inverse_crime, noncart=self.hparams.noncart)
+        else:
+            self.D = MultiChannelMRIDataset(data_file=self.hparams.data_file, stdev=self.hparams.stdev, num_data_sets=self.hparams.num_data_sets, adjoint=False, id=0, clear_cache=False, cache_data=False, scale_data=False, fully_sampled=self.hparams.fully_sampled, data_idx=None, inverse_crime=self.hparams.inverse_crime, noncart=self.hparams.noncart)
 
     def _abs_loss_fun(self, x_hat, imgs):
         x_hat_abs = torch.sqrt(x_hat.pow(2).sum(dim=-1))
@@ -101,21 +107,21 @@ class Recon(pl.LightningModule):
                 _x_gt = utils.t2n(imgs[_idx,...])
                 _x_adj = utils.t2n(x_adj[_idx,...])
 
-                myim = torch.tensor(np.stack((np.abs(_x_hat), np.angle(_x_hat)), axis=0))[:, None, ...]
-                grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
-                if self.logger:
-                    self.logger.experiment.add_image('2_train_prediction', grid, self.current_epoch)
-
-                if self.current_epoch == 0:
-                    myim = torch.tensor(np.stack((np.abs(_x_gt), np.angle(_x_gt)), axis=0))[:, None, ...]
-                    grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
-                    if self.logger:
-                        self.logger.experiment.add_image('1_ground_truth', grid, 0)
-
-                    myim = torch.tensor(np.stack((np.abs(_x_adj), np.angle(_x_adj)), axis=0))[:, None, ...]
-                    grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
-                    if self.logger:
-                        self.logger.experiment.add_image('0_input', grid, 0)
+                # myim = torch.tensor(np.stack((np.abs(_x_hat), np.angle(_x_hat)), axis=0))[:, None, ...]
+                # grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
+                # if self.logger:
+                #     self.logger.experiment.add_image('2_train_prediction', grid, self.current_epoch)
+                #
+                # if self.current_epoch == 0:
+                #     myim = torch.tensor(np.stack((np.abs(_x_gt), np.angle(_x_gt)), axis=0))[:, None, ...]
+                #     grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
+                #     if self.logger:
+                #         self.logger.experiment.add_image('1_ground_truth', grid, 0)
+                #
+                #     myim = torch.tensor(np.stack((np.abs(_x_adj), np.angle(_x_adj)), axis=0))[:, None, ...]
+                #     grid = make_grid(myim, scale_each=True, normalize=True, nrow=8, pad_value=10)
+                #     if self.logger:
+                #         self.logger.experiment.add_image('0_input', grid, 0)
 
 
         if self.hparams.self_supervised:
@@ -140,7 +146,7 @@ class Recon(pl.LightningModule):
                 'lambda': _lambda,
                 'train_loss': _loss,
                 'epoch': self.current_epoch,
-                'nrmse': _nrmse, 
+                'nrmse': _nrmse,
                 'max_num_cg': _num_cg,
                 'val_loss': 0.,
                 }
@@ -165,4 +171,4 @@ class Recon(pl.LightningModule):
         else:
             sampler = None
             shuffle = self.hparams.shuffle
-        return torch.utils.data.DataLoader(self.D, batch_size=self.hparams.batch_size, shuffle=shuffle, num_workers=0, drop_last=True, sampler=sampler)
+        return torch.utils.data.DataLoader(self.D, batch_size=self.hparams.batch_size, shuffle=shuffle, num_workers=self.hparams.num_workers, drop_last=True, sampler=sampler)

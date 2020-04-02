@@ -56,10 +56,10 @@ class ResNet5Block(torch.nn.Module):
                 Conv2dSame(num_filters,num_filters_end,filter_size)
             )
         self.T = T
-        
+
     def forward(self,x,device='cpu'):
         return x + self.step(x, device=device)
-    
+
     def step(self, x, device='cpu'):
         # reshape (batch,x,y,channel=2) -> (batch,channe=2,x,y)
         x = x.permute(0, 3, 1, 2)
@@ -151,11 +151,13 @@ class ResNetBlock(torch.nn.Module):
         return torch.nn.ReLU()
 
 class ResNet(torch.nn.Module):
-    def __init__(self, in_channels=2, latent_channels=64, num_blocks=3, kernel_size=7, bias=False, batch_norm=True, dropout=0, topk=None, l1lam=None):
+    # NJM: adding combine channels input here
+    def __init__(self, in_channels=2, latent_channels=64, combine_channels=False, num_blocks=3, kernel_size=7, bias=False, batch_norm=True, dropout=0, topk=None, l1lam=None):
         super(ResNet, self).__init__()
 
         self.batch_norm = batch_norm
         self.num_blocks = num_blocks
+        self.combine_channels = combine_channels # NJM: flag to combine the dimensions 1 and -1 into channels dimension
 
         # initialize conv variables
         self.in_channels = in_channels
@@ -177,7 +179,17 @@ class ResNet(torch.nn.Module):
         self.topk = topk
 
     def forward(self, x):
-        x = x.permute(0, 3, 1, 2)
+        # NJM: size for single-band: (batch, N, N, 2) <--- 2 is for real/imag
+        # NJM: size for multib-band: (batch, SMS, N, N, 2) <--- 2 is for real/imag
+        if self.combine_channels:
+            xsize = x.size()
+            x = x.permute(0, 2, 3, 1, 4)
+            nxsize = x.size()
+            x = torch.reshape(x, (xsize[0],xsize[2],xsize[3],-1))
+            x = x.permute(0, 3, 1, 2)
+        else:
+            x = x.permute(0, 3, 1, 2)
+
         residual = x
         for n in range(self.num_blocks):
             x = self.ResNetBlocks[n](x)
@@ -189,8 +201,16 @@ class ResNet(torch.nn.Module):
                     act = utils.topk(act, self.topk, dim=1)
                 x = act
         x += residual
-        #return x.permute(0, 2, 3, 1), act
-        return x.permute(0, 2, 3, 1)
+
+        # NJM: support undo channel combination
+        x = x.permute(0, 2, 3, 1)
+        if self.combine_channels:
+            # currently at (batch,N,N,channels)
+            x = torch.reshape(x,nxsize)
+            # now at (batch,N,N,slcs or frames,2)
+            x = x.permute(0, 3, 1, 2, 4)
+
+        return x
 
     def _build_model(self):
         ResNetBlocks = torch.nn.ModuleList()
@@ -198,7 +218,7 @@ class ResNet(torch.nn.Module):
         # first block goes from input space (2ch) to latent space (64ch)
         ResNetBlocks.append(self._add_block(final_relu=True, in_channels=self.in_channels, latent_channels=self.latent_channels, out_channels=self.latent_channels))
 
-        # middle blocks go from latent space to latent space 
+        # middle blocks go from latent space to latent space
         for n in range(self.num_blocks - 2):
             ResNetBlocks.append(self._add_block(final_relu=True, in_channels=self.latent_channels, latent_channels=self.latent_channels, out_channels=self.latent_channels))
 
@@ -215,6 +235,3 @@ class ResNet(torch.nn.Module):
                 bias=self.bias,
                 batch_norm=self.batch_norm,
                 final_relu=final_relu, dropout=self.dropout)
-
-
-

@@ -7,6 +7,7 @@ from deepinpy.utils import utils
 from deepinpy.opt import ConjGrad
 from deepinpy.models import ResNet5Block, ResNet, UnrollNet
 from deepinpy.forwards import MultiChannelMRI
+from deepinpy.forwards import MultiBandMRI
 from deepinpy.recons import Recon
 
 class MoDLRecon(Recon):
@@ -18,7 +19,12 @@ class MoDLRecon(Recon):
         if hparams.network == 'ResNet5Block':
             self.denoiser = ResNet5Block(num_filters=hparams.latent_channels, filter_size=7, batch_norm=hparams.batch_norm)
         elif hparams.network == 'ResNet':
-            self.denoiser = ResNet(latent_channels=hparams.latent_channels, num_blocks=hparams.num_blocks, kernel_size=7, batch_norm=hparams.batch_norm)
+
+            # NJM: support for mutliband
+            if hparams.multiband:
+                self.denoiser = ResNet(in_channels=int(2*hparams.multiband), combine_channels=True, latent_channels=hparams.latent_channels, num_blocks=hparams.num_blocks, kernel_size=7, batch_norm=hparams.batch_norm)
+            else:
+                self.denoiser = ResNet(latent_channels=hparams.latent_channels, num_blocks=hparams.num_blocks, kernel_size=7, batch_norm=hparams.batch_norm)
 
         modl_recon_one_unroll = MoDLReconOneUnroll(denoiser=self.denoiser, l2lam=self.l2lam, hparams=hparams)
         self.unroll_model = UnrollNet(module_list=[modl_recon_one_unroll], data_list=[None],  num_unrolls=self.hparams.num_unrolls)
@@ -52,7 +58,12 @@ class MoDLReconOneUnroll(torch.nn.Module):
         masks = data['masks']
         inp = data['out']
 
-        self.A = MultiChannelMRI(maps, masks, l2lam=0., img_shape=data['imgs'].shape, use_sigpy=self.hparams.use_sigpy, noncart=self.hparams.noncart)
+        # NJM: support for multiband
+        if self.hparams.multiband:
+            phi = data['phi']
+            self.A = MultiBandMRI(maps, masks, phi, l2lam=0., ksp_shape=phi.shape, img_shape=data['imgs'].shape, use_sigpy=self.hparams.use_sigpy, noncart=self.hparams.noncart)
+        else:
+            self.A = MultiChannelMRI(maps, masks, l2lam=0., img_shape=data['imgs'].shape, use_sigpy=self.hparams.use_sigpy, noncart=self.hparams.noncart)
         self.x_adj = self.A.adjoint(inp)
 
     def forward(self, x):
