@@ -25,7 +25,7 @@ class MultiBandMRI(torch.nn.Module):
         if use_sigpy:
 
             from sigpy import from_pytorch, to_device, Device
-            sp_device = Device(0) #Device(self.maps.device.index) # NJM: change to Device(-1) for CPU
+            sp_device = Device(self.maps.device.index) # NJM: change to Device(-1) for CPU
 
             # from real-valued pytorch tensor of shape (batchsize,coils,SMS,N,N,2)
             # to complex-valued numpy/cupy array of shape (batchsize,coils,SMS,N,N)

@@ -17,14 +17,22 @@ torch.backends.cudnn.enabled = True
 
 import numpy.random
 
-def main_train(args, gpu_ids=None):
+def main_train(args, idx=None, gpu_ids=None):
+    if args.random_name:
+        ridx = int(numpy.random.rand()*1000)
+        name = '{}_{}'.format(args.name, ridx)
+    else:
+        name = args.name
 
-    tt_logger = TestTubeLogger(save_dir="./logs", name=args.name, debug=False, create_git_tag=False, version=args.version)
+    if idx is not None:
+        name = '{}_{}'.format(name, idx)
+
+    tt_logger = TestTubeLogger(save_dir="./logs", name=name, debug=False, create_git_tag=False, version=args.version)
     tt_logger.log_hyperparams(args)
-    save_path = './logs/{}/version_{}'.format(tt_logger.name, tt_logger.version) 
+    save_path = './logs/{}/version_{}'.format(tt_logger.name, tt_logger.version)
     checkpoint_path = '{}/checkpoints'.format(save_path)
     pathlib.Path(checkpoint_path).mkdir(parents=True, exist_ok=True)
-    checkpoint_callback = ModelCheckpoint(checkpoint_path, 'epoch', save_top_k=1, mode='max') 
+    checkpoint_callback = ModelCheckpoint(checkpoint_path, 'epoch', save_top_k=1, mode='max')
 
     if args.recon == 'cgsense':
         MyRecon = CGSenseRecon
@@ -55,7 +63,7 @@ def main_train(args, gpu_ids=None):
         distributed_backend = 'ddp'
 
 
-    trainer = Trainer(max_epochs=args.num_epochs, gpus=gpus, logger=tt_logger, checkpoint_callback=checkpoint_callback, early_stop_callback=None, distributed_backend=None, accumulate_grad_batches=args.num_accumulate, progress_bar_refresh_rate=1)
+    trainer = Trainer(max_epochs=args.num_epochs, gpus=gpus, logger=tt_logger, early_stop_callback=None, distributed_backend=None, accumulate_grad_batches=args.num_accumulate, progress_bar_refresh_rate=1)
 
     trainer.fit(M)
 
@@ -90,6 +98,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_file', action='store', dest='data_file', type=str, help='data.h5', default=None)
     parser.add_argument('--data_val_file', action='store', dest='data_val_file', type=str, help='data.h5', default=None)
     parser.add_argument('--num_data_sets', action='store', dest='num_data_sets', type=int, help='number of data sets to use', default=None)
+    parser.add_argument('--multiband', action='store', dest='multiband', help='Multiband factor', default=None) # NJM: support for multiband
     parser.add_argument('--num_workers', action='store', type=int,  dest='num_workers', help='number of workers', default=0)
     parser.add_argument('--shuffle', action='store_true', dest='shuffle', help='shuffle input data files each epoch', default=False)
     parser.add_argument('--clip_grads', action='store', type=float, dest='clip_grads', help='clip gradients to [-val, +val]', default=False)
@@ -106,7 +115,6 @@ if __name__ == '__main__':
     parser.add_argument('--hyperopt', action='store_true', dest='hyperopt', help='perform hyperparam optimization', default=False)
     parser.add_argument('--checkpoint_init', action='store', dest='checkpoint_init', type=str, help='load from checkpoint', default=None)
     parser.json_config('--config', default=None)
-    
 
     args = parser.parse_args()
 
@@ -114,21 +122,27 @@ if __name__ == '__main__':
     torch.manual_seed(args.random_seed)
     numpy.random.seed(args.random_seed)
 
-    if args.hyperopt:
-        args.distributed_training = False
-        if args.gpu is None:
-            args.optimize_parallel_cpu(main_train, nb_trials=args.num_trials, nb_workers=args.num_workers)
-        else:
-            gpu_ids = [a.strip() for a in args.gpu.split(',')]
-            args.optimize_parallel_gpu(main_train, gpu_ids=gpu_ids, max_nb_trials=args.num_trials)
-    else:
-        if args.gpu is not None:
-            gpu_ids = [int(a) for a in args.gpu.split(',')]
-            if len(gpu_ids) > 1:
-                args.distributed_training = True
-            else:
-                args.distributed_training = False
-        else:
-            gpu_ids = None
-            args.distributed_training = False
-        main_train(args, gpu_ids=gpu_ids)
+    args.distributed_training = False
+    # gpu_ids = ['0']
+    gpu_ids = [a.strip() for a in args.gpu.split(',')]
+    print(gpu_ids)
+    args.optimize_parallel_gpu(main_train, gpu_ids=gpu_ids, max_nb_trials=args.num_trials)
+
+    # if args.hyperopt:
+    #
+    #     if args.gpu is None:
+    #         args.optimize_parallel_cpu(main_train, nb_trials=args.num_trials, nb_workers=args.num_workers)
+    #     else:
+    #         gpu_ids = [a.strip() for a in args.gpu.split(',')]
+    #         args.optimize_parallel_gpu(main_train, gpu_ids=gpu_ids, max_nb_trials=args.num_trials)
+    # else:
+    #     if args.gpu is not None:
+    #         gpu_ids = [int(a) for a in args.gpu.split(',')]
+    #         if len(gpu_ids) > 1:
+    #             args.distributed_training = True
+    #         else:
+    #             args.distributed_training = False
+    #     else:
+    #         gpu_ids = None
+    #         args.distributed_training = False
+    #     main_train(args, gpu_ids=gpu_ids)
