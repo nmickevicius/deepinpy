@@ -56,7 +56,7 @@ def main_train(args, idx=None, gpu_ids=None):
         gpus = None
         distributed_backend = None # FIXME should this also be ddp?
     elif args.hyperopt:
-        gpus = 1
+        gpus = gpu_ids
         distributed_backend = None
     else:
         gpus = gpu_ids
@@ -126,6 +126,7 @@ if __name__ == '__main__':
     # gpu_ids = ['0']
     gpu_ids = [a.strip() for a in args.gpu.split(',')]
     print(gpu_ids)
+    print(gpu_ids[0])
     args.optimize_parallel_gpu(main_train, gpu_ids=gpu_ids, max_nb_trials=args.num_trials)
 
     # if args.hyperopt:
